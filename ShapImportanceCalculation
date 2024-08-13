@@ -1,0 +1,40 @@
+import shap
+import xgboost as xgb
+
+def calculate_shap_importance_by_binned_data(model, X_original, X_binned):
+    """
+    Calculate SHAP feature importance for each bin using binned data and return a DataFrame.
+
+    Parameters:
+    - model: Trained XGBoost model
+    - X_original: DataFrame of original input features (unbinned)
+    - X_binned: DataFrame of binned features
+
+    Returns:
+    - DataFrame with multi-indexed rows (Feature, Bin) and a column for SHAP importance
+    """
+    
+    # Step 1: Calculate SHAP values
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(X_original)
+    
+    # Step 2: Create a DataFrame for SHAP values
+    shap_df = pd.DataFrame(shap_values, columns=X_original.columns)
+    shap_df_abs = shap_df.abs()  # Use absolute SHAP values
+    
+    # Step 3: Map SHAP values to their corresponding bins and calculate importance
+    shap_importance_list = []
+    
+    for feature in X_original.columns:
+        shap_importance = pd.DataFrame({
+            'Feature': feature,
+            'Bin': X_binned[feature],
+            'Shap importance': shap_df_abs[feature]
+        })
+        shap_importance_list.append(shap_importance)
+    
+    # Step 4: Concatenate all results and group by Feature and Bin
+    shap_importance_df = pd.concat(shap_importance_list)
+    shap_importance_df = shap_importance_df.groupby(['Feature', 'Bin']).sum().reset_index()
+
+    return shap_importance_df
