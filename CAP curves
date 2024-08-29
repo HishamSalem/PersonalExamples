@@ -2,23 +2,20 @@ mport numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve
-
 def cumulative_accuracy_profile(y_true, predictions_df):
     plt.figure(figsize=(12, 10))
     
-    # Calculate the total population
+    # Calculate the total population and number of positive cases
     total_population = len(y_true)
-    
-    # Calculate the number of positive cases
     total_positives = np.sum(y_true)
     
     # Calculate the random model line
-    random_x = np.linspace(0, total_population, 100)
-    random_y = random_x * (total_positives / total_population)
+    random_x = np.linspace(0, 1, 100)
+    random_y = random_x
     
     # Calculate the perfect model line
-    perfect_x = np.concatenate([np.arange(total_positives), [total_population]])
-    perfect_y = np.concatenate([np.arange(total_positives), [total_positives]])
+    perfect_x = np.concatenate([[0], np.repeat(total_positives / total_population, 2), [1]])
+    perfect_y = np.concatenate([[0], [0, 1], [1]])
     
     # Plot the random and perfect model lines
     plt.plot(random_x, random_y, 'r--', label='Random Model')
@@ -36,12 +33,8 @@ def cumulative_accuracy_profile(y_true, predictions_df):
         # Calculate the ROC curve
         fpr, tpr, _ = roc_curve(y_true, y_pred)
         
-        # Calculate the model line
-        model_x = fpr * total_population
-        model_y = tpr * total_positives
-        
         # Plot the model line
-        plt.plot(model_x, model_y, color=colors[i % len(colors)], label=f'{column}')
+        plt.plot(fpr, tpr, color=colors[i % len(colors)], label=f'{column}')
         
         # Calculate the area under the curve (AUC)
         auc = np.trapz(tpr, fpr)
@@ -52,5 +45,11 @@ def cumulative_accuracy_profile(y_true, predictions_df):
     plt.title('Cumulative Accuracy Profile Comparison')
     plt.legend()
     plt.grid(True)
+    
+    # Set the axes to show percentages
+    plt.xlim(0, 1)
+    plt.ylim(0, 1)
+    plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: '{:.0%}'.format(x)))
+    plt.gca().yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     
     return plt, auc_scores
