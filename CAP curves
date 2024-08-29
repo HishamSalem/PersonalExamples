@@ -1,0 +1,56 @@
+mport numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve
+
+def cumulative_accuracy_profile(y_true, predictions_df):
+    plt.figure(figsize=(12, 10))
+    
+    # Calculate the total population
+    total_population = len(y_true)
+    
+    # Calculate the number of positive cases
+    total_positives = np.sum(y_true)
+    
+    # Calculate the random model line
+    random_x = np.linspace(0, total_population, 100)
+    random_y = random_x * (total_positives / total_population)
+    
+    # Calculate the perfect model line
+    perfect_x = np.concatenate([np.arange(total_positives), [total_population]])
+    perfect_y = np.concatenate([np.arange(total_positives), [total_positives]])
+    
+    # Plot the random and perfect model lines
+    plt.plot(random_x, random_y, 'r--', label='Random Model')
+    plt.plot(perfect_x, perfect_y, 'g--', label='Perfect Model')
+    
+    # Colors for different models
+    colors = ['b', 'c', 'm', 'y', 'k', 'orange', 'purple', 'brown', 'pink', 'gray']
+    
+    auc_scores = {}
+    
+    # Plot each model
+    for i, column in enumerate(predictions_df.columns):
+        y_pred = predictions_df[column]
+        
+        # Calculate the ROC curve
+        fpr, tpr, _ = roc_curve(y_true, y_pred)
+        
+        # Calculate the model line
+        model_x = fpr * total_population
+        model_y = tpr * total_positives
+        
+        # Plot the model line
+        plt.plot(model_x, model_y, color=colors[i % len(colors)], label=f'{column}')
+        
+        # Calculate the area under the curve (AUC)
+        auc = np.trapz(tpr, fpr)
+        auc_scores[column] = auc
+    
+    plt.xlabel('Cumulative % of Population')
+    plt.ylabel('Cumulative % of Positives')
+    plt.title('Cumulative Accuracy Profile Comparison')
+    plt.legend()
+    plt.grid(True)
+    
+    return plt, auc_scores
