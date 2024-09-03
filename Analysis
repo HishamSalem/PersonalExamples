@@ -54,7 +54,7 @@ vif_data_final, vif_drop_features = remove_high_vif_features(X_filtered_vif_prep
 
 
 
-def remove_high_vif_features(X, threshold=5, max_removal_fraction=0.1, safe_zone=15):
+def remove_high_vif_features(X, threshold=5):
     dropped_features = []
     initial_feature_count = len(X.columns)
     iteration = 0
@@ -67,24 +67,20 @@ def remove_high_vif_features(X, threshold=5, max_removal_fraction=0.1, safe_zone
         if max_vif <= threshold:
             break
         
-        # Filter features above the safe zone
-        high_vif_features = vif_data[vif_data['VIF'] > safe_zone]
-        
-        if high_vif_features.empty:
-            print(f"No features with VIF > {safe_zone}. Stopping.")
-            break
-        
-        # Calculate the number of features to remove
-        n_features = len(X.columns)
-        n_high_vif = len(high_vif_features)
-        n_to_remove = min(
-            max(1, int(n_high_vif * 0.2)),  # Remove at least 1, up to 20% of high VIF features
-            max(1, int(n_features * max_removal_fraction)),  # But no more than max_removal_fraction of total features
-            n_high_vif  # And no more than the total number of high VIF features
-        )
-        
-        # Get the top N features with highest VIF
-        features_to_drop = high_vif_features.nlargest(n_to_remove, 'VIF')['feature'].tolist()
+        # Determine the removal strategy based on the max VIF score
+        if max_vif > 100:
+            # Remove all features with VIF > 100
+            features_to_drop = vif_data[vif_data['VIF'] > 100]['feature'].tolist()
+        elif 20 < max_vif <= 100:
+            # Remove 40% of features with VIF > 20
+            high_vif_features = vif_data[vif_data['VIF'] > 20]
+            n_to_remove = max(1, int(len(high_vif_features) * 0.4))
+            features_to_drop = high_vif_features.nlargest(n_to_remove, 'VIF')['feature'].tolist()
+        else:
+            # Remove 10% of features with VIF > 5 (or at least 1 feature)
+            high_vif_features = vif_data[vif_data['VIF'] > threshold]
+            n_to_remove = max(1, int(len(high_vif_features) * 0.1))
+            features_to_drop = high_vif_features.nlargest(n_to_remove, 'VIF')['feature'].tolist()
         
         # Drop the selected features
         X = X.drop(columns=features_to_drop)
