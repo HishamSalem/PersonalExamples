@@ -48,3 +48,61 @@ def remove_high_vif_features(X, threshold=5, max_removal_fraction=0.1, safe_zone
 
 # Usage
 vif_data_final, vif_drop_features = remove_high_vif_features(X_filtered_vif_prep, threshold=5, max_removal_fraction=0.1, safe_zone=15)
+
+
+
+
+
+
+def remove_high_vif_features(X, threshold=5, max_removal_fraction=0.1, safe_zone=15):
+    dropped_features = []
+    initial_feature_count = len(X.columns)
+    iteration = 0
+    
+    while True:
+        iteration += 1
+        vif_data = calculate_vif(X)
+        max_vif = vif_data['VIF'].max()
+        
+        if max_vif <= threshold:
+            break
+        
+        # Filter features above the safe zone
+        high_vif_features = vif_data[vif_data['VIF'] > safe_zone]
+        
+        if high_vif_features.empty:
+            print(f"No features with VIF > {safe_zone}. Stopping.")
+            break
+        
+        # Calculate the number of features to remove
+        n_features = len(X.columns)
+        n_high_vif = len(high_vif_features)
+        n_to_remove = min(
+            max(1, int(n_high_vif * 0.2)),  # Remove at least 1, up to 20% of high VIF features
+            max(1, int(n_features * max_removal_fraction)),  # But no more than max_removal_fraction of total features
+            n_high_vif  # And no more than the total number of high VIF features
+        )
+        
+        # Get the top N features with highest VIF
+        features_to_drop = high_vif_features.nlargest(n_to_remove, 'VIF')['feature'].tolist()
+        
+        # Drop the selected features
+        X = X.drop(columns=features_to_drop)
+        dropped_features.extend(features_to_drop)
+        
+        features_remaining = len(X.columns)
+        total_removed = initial_feature_count - features_remaining
+        
+        print(f"Iteration {iteration}:")
+        print(f"  Dropped {len(features_to_drop)} feature(s): {', '.join(features_to_drop)}")
+        print(f"  Features remaining: {features_remaining}")
+        print(f"  Total features removed: {total_removed}")
+        print(f"  X shape: {X.shape}")
+        print()
+    
+    print("Final summary:")
+    print(f"  Initial feature count: {initial_feature_count}")
+    print(f"  Final feature count: {len(X.columns)}")
+    print(f"  Total features removed: {len(dropped_features)}")
+    
+    return calculate_vif(X), dropped_features
