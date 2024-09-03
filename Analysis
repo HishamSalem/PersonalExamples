@@ -1,0 +1,50 @@
+import pandas as pd
+import numpy as np
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+def calculate_vif(X):
+    vif_data = pd.DataFrame()
+    vif_data["feature"] = X.columns
+    vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
+    return vif_data
+
+def remove_high_vif_features(X, threshold=5, max_removal_fraction=0.1, safe_zone=15):
+    dropped_features = []
+    
+    while True:
+        vif_data = calculate_vif(X)
+        max_vif = vif_data['VIF'].max()
+        
+        if max_vif <= threshold:
+            break
+        
+        # Filter features above the safe zone
+        high_vif_features = vif_data[vif_data['VIF'] > safe_zone]
+        
+        if high_vif_features.empty:
+            print(f"No features with VIF > {safe_zone}. Stopping.")
+            break
+        
+        # Calculate the number of features to remove
+        n_features = len(X.columns)
+        n_high_vif = len(high_vif_features)
+        n_to_remove = min(
+            max(1, int(n_high_vif * 0.2)),  # Remove at least 1, up to 20% of high VIF features
+            max(1, int(n_features * max_removal_fraction)),  # But no more than max_removal_fraction of total features
+            n_high_vif  # And no more than the total number of high VIF features
+        )
+        
+        # Get the top N features with highest VIF
+        features_to_drop = high_vif_features.nlargest(n_to_remove, 'VIF')['feature'].tolist()
+        
+        # Drop the selected features
+        X = X.drop(columns=features_to_drop)
+        dropped_features.extend(features_to_drop)
+        
+        print(f"Dropped {len(features_to_drop)} feature(s): {', '.join(features_to_drop)}")
+        print(f"X shape: {X.shape}")
+    
+    return calculate_vif(X), dropped_features
+
+# Usage
+vif_data_final, vif_drop_features = remove_high_vif_features(X_filtered_vif_prep, threshold=5, max_removal_fraction=0.1, safe_zone=15)
