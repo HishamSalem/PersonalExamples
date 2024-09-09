@@ -1,33 +1,33 @@
 import os
-import re
 
-def extract_feature_engineering(file_path):
-    with open(file_path, 'r') as file:
-        content = file.read()
-        
-    pattern = r'public\s+HashMap<String,\s*Object>\s+featureEngineering\s*\([^)]*\)\s*\{(.*?)\}'
-    match = re.search(pattern, content, re.DOTALL)
-    
-    if match:
-        return match.group(1).strip()
-    return None
+def consolidate_java_files(input_directory, output_file):
+    # List to store the contents of all Java files
+    all_contents = []
 
-def process_java_files(directory, output_file):
-    with open(output_file, 'w') as outfile:
-        for root, _, files in os.walk(directory):
-            for file in files:
-                if file.endswith('.java'):
-                    file_path = os.path.join(root, file)
-                    feature_content = extract_feature_engineering(file_path)
-                    
-                    if feature_content:
-                        outfile.write(f"// From file: {file}\n")
-                        outfile.write(feature_content)
-                        outfile.write("\n\n")
+    # Walk through the directory and its subdirectories
+    for root, dirs, files in os.walk(input_directory):
+        for file in files:
+            if file.endswith('.java'):
+                file_path = os.path.join(root, file)
+                
+                # Read the contents of each Java file
+                with open(file_path, 'r') as java_file:
+                    content = java_file.read()
+                
+                # Add a header with the file name
+                header = f"\n\n// File: {file_path}\n"
+                all_contents.append(header + content)
 
-# Usage
+    # Write all contents to the output file
+    with open(output_file, 'w') as output:
+        output.write("// Consolidated Java Files\n")
+        output.writelines(all_contents)
+
+    print(f"Consolidation complete. Output file: {output_file}")
+
+# Example usage
 input_directory = '/path/to/your/java/files'
-output_file = 'combined_feature_engineering.txt'
+output_file = '/path/to/output/consolidated_java_files.java'
 
-process_java_files(input_directory, output_file)
-print(f"Feature engineering content has been extracted and saved to {output_file}")
+consolidate_java_files(input_directory, output_file)
+
