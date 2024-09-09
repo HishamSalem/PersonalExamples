@@ -1,0 +1,54 @@
+import os
+import hashlib
+
+def consolidate_java_files(input_directory, output_file):
+    # Dictionary to store unique code blocks
+    unique_code_blocks = {}
+
+    # Walk through the directory and its subdirectories
+    for root, dirs, files in os.walk(input_directory):
+        for file in files:
+            if file.endswith('.java'):
+                file_path = os.path.join(root, file)
+                
+                # Read the contents of each Java file
+                with open(file_path, 'r') as java_file:
+                    content = java_file.read()
+                
+                # Split the content into individual code blocks (e.g., methods, classes)
+                code_blocks = split_into_code_blocks(content)
+                
+                for block in code_blocks:
+                    # Generate a hash for the code block
+                    block_hash = hashlib.md5(block.encode()).hexdigest()
+                    
+                    # If this is a new unique block, add it to the dictionary
+                    if block_hash not in unique_code_blocks:
+                        unique_code_blocks[block_hash] = (file_path, block)
+
+    # Write unique contents to the output file
+    with open(output_file, 'w') as output:
+        output.write("// Consolidated Java Files (Duplicates Removed)\n\n")
+        for file_path, block in unique_code_blocks.values():
+            output.write(f"// File: {file_path}\n")
+            output.write(block)
+            output.write("\n\n")
+
+    print(f"Consolidation complete. Output file: {output_file}")
+
+def split_into_code_blocks(content):
+    # This is a simple implementation. You might need to adjust it based on your specific needs.
+    # It splits the content into blocks based on empty lines and certain keywords.
+    blocks = []
+    current_block = []
+    for line in content.split('\n'):
+        if line.strip() == '' or line.strip().startswith(('public ', 'private ', 'protected ', 'class ', 'interface ')):
+            if current_block:
+                blocks.append('\n'.join(current_block))
+                current_block = []
+        current_block.append(line)
+    
+    if current_block:
+        blocks.append('\n'.join(current_block))
+    
+    return blocks
