@@ -4,7 +4,7 @@ import re
 
 def process_features(data, data_dictionary_path):
     # Load the data dictionary
-    dictionary = pd.read_excel(data_dictionary_path)
+    dictionary = data_dictionary_path.copy()
     
     for _, row in dictionary.iterrows():
         feature_name = row['NAME']
@@ -26,23 +26,23 @@ def process_features(data, data_dictionary_path):
         # Process special codes
         if pd.notna(special_codes):
             # Split the special codes string into individual code-description pairs
-            code_desc_pairs = special_codes.split('\n\n')
+            code_desc_pairs = special_codes.split('\n')
             
             code_dict = {}
             for pair in code_desc_pairs:
                 match = re.match(r'(\d+):\s*(.*)', pair.strip())
                 if match:
                     code, desc = match.groups()
-                    code_dict[code] = desc.strip()
+                    code_dict[int(code)] = desc.strip()
             
             if code_dict:
                 # Create a new column for special codes
-                data[f'{feature_name}_special_code'] = data[feature_name].astype(str).where(data[feature_name].astype(str).isin(code_dict.keys()))
+                data[f'{feature_name}_special_code'] = data[feature_name].where(data[feature_name].isin(code_dict.keys()))
                 
                 # Create a new column with descriptions
-                data[f'{feature_name}_description'] = data[feature_name].astype(str).map(code_dict)
+                data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
                 
                 # Replace special codes with np.nan in the original column
-                data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
+                data[feature_name] = data[feature_name].where(~data[feature_name].isin(code_dict.keys()), np.nan)
     
     return data
