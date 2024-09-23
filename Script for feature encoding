@@ -1,5 +1,4 @@
-import pandas as pd
-import numpy as np
+import re
 
 def process_features(data, data_dictionary_path):
     # Load the data dictionary
@@ -24,20 +23,24 @@ def process_features(data, data_dictionary_path):
         
         # Process special codes
         if pd.notna(special_codes):
+            # Split the special codes string into individual code-description pairs
+            code_desc_pairs = re.split(r'\n(?=\d+:)', special_codes.strip())
+            
             code_dict = {}
-            for code_desc in special_codes.split('\n'):
-                code, desc = code_desc.split(':', 1)
-                code = code.strip()
-                desc = desc.strip()
-                code_dict[code] = desc
+            for pair in code_desc_pairs:
+                match = re.match(r'(\d+):\s*(.*)', pair.strip())
+                if match:
+                    code, desc = match.groups()
+                    code_dict[code] = desc.strip()
+                    
+                    # Create a new column for each special code
+                    data[f'{feature_name}_{code}'] = data[feature_name] == code
+            
+            if code_dict:
+                # Replace special codes with np.nan in the original column
+                data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
                 
-                # Create a new column for each special code
-                data[f'{feature_name}_{code}'] = data[feature_name] == code
-            
-            # Replace special codes with np.nan in the original column
-            data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
-            
-            # Create a new column with descriptions
-            data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
+                # Create a new column with descriptions
+                data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
     
     return data
