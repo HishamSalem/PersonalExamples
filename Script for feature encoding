@@ -1,0 +1,43 @@
+import pandas as pd
+import numpy as np
+
+def process_features(data, data_dictionary_path):
+    # Load the data dictionary
+    dictionary = pd.read_excel(data_dictionary_path)
+    
+    for _, row in dictionary.iterrows():
+        feature_name = row['Name']
+        valid_values = row['Valid Values']
+        special_codes = row['Default Values and Descriptions']
+        
+        if feature_name not in data.columns:
+            print(f"Warning: {feature_name} not found in the dataset. Skipping.")
+            continue
+        
+        # Process valid values (range)
+        if pd.notna(valid_values):
+            try:
+                lower, upper = map(float, valid_values.split('-'))
+                data[f'{feature_name}_in_range'] = data[feature_name].between(lower, upper)
+            except ValueError:
+                print(f"Warning: Unable to process valid values for {feature_name}. Skipping range check.")
+        
+        # Process special codes
+        if pd.notna(special_codes):
+            code_dict = {}
+            for code_desc in special_codes.split('\n'):
+                code, desc = code_desc.split(':', 1)
+                code = code.strip()
+                desc = desc.strip()
+                code_dict[code] = desc
+                
+                # Create a new column for each special code
+                data[f'{feature_name}_{code}'] = data[feature_name] == code
+            
+            # Replace special codes with np.nan in the original column
+            data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
+            
+            # Create a new column with descriptions
+            data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
+    
+    return data
