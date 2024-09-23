@@ -7,9 +7,9 @@ def process_features(data, data_dictionary_path):
     dictionary = pd.read_excel(data_dictionary_path)
     
     for _, row in dictionary.iterrows():
-        feature_name = row['Name']
-        valid_values = row['Valid Values']
-        special_codes = row['Default Values and Descriptions']
+        feature_name = row['NAME']
+        valid_values = row['VALID VALUES']
+        special_codes = row['DEFAULT VALUES AND DESCRIPTIONS']
         
         if feature_name not in data.columns:
             print(f"Warning: {feature_name} not found in the dataset. Skipping.")
@@ -26,7 +26,7 @@ def process_features(data, data_dictionary_path):
         # Process special codes
         if pd.notna(special_codes):
             # Split the special codes string into individual code-description pairs
-            code_desc_pairs = re.split(r'\n(?=\d+:)', special_codes.strip())
+            code_desc_pairs = special_codes.split('\n\n')
             
             code_dict = {}
             for pair in code_desc_pairs:
@@ -37,10 +37,10 @@ def process_features(data, data_dictionary_path):
             
             if code_dict:
                 # Create a new column for special codes
-                data[f'{feature_name}_special_code'] = data[feature_name].where(data[feature_name].isin(code_dict.keys()))
+                data[f'{feature_name}_special_code'] = data[feature_name].astype(str).where(data[feature_name].astype(str).isin(code_dict.keys()))
                 
                 # Create a new column with descriptions
-                data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
+                data[f'{feature_name}_description'] = data[feature_name].astype(str).map(code_dict)
                 
                 # Replace special codes with np.nan in the original column
                 data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
