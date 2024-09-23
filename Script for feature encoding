@@ -1,3 +1,5 @@
+import pandas as pd
+import numpy as np
 import re
 
 def process_features(data, data_dictionary_path):
@@ -32,15 +34,15 @@ def process_features(data, data_dictionary_path):
                 if match:
                     code, desc = match.groups()
                     code_dict[code] = desc.strip()
-                    
-                    # Create a new column for each special code
-                    data[f'{feature_name}_{code}'] = data[feature_name] == code
             
             if code_dict:
-                # Replace special codes with np.nan in the original column
-                data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
+                # Create a new column for special codes
+                data[f'{feature_name}_special_code'] = data[feature_name].where(data[feature_name].isin(code_dict.keys()))
                 
                 # Create a new column with descriptions
                 data[f'{feature_name}_description'] = data[feature_name].map(code_dict)
+                
+                # Replace special codes with np.nan in the original column
+                data[feature_name] = data[feature_name].replace(code_dict.keys(), np.nan)
     
     return data
