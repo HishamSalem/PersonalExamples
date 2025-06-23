@@ -1,98 +1,107 @@
-import numpy as np
-import pandas as pd
-import statsmodels.api as sm
-from scipy.stats import norm
-
-class HeckmanTwoStage:
-    """
-    A modular two-step Heckman correction wrapper.
+class HeckmanWrapper:
+    """Modular two–stage Heckman correction that plugs any sklearn‑like estimator.
 
     Parameters
     ----------
-    outcome_estimator : object
-        Any estimator with .fit(X, y) and .predict or .predict_proba.
-    use_proba : bool
-        If True, wrapper.predict returns outcome_estimator.predict_proba.
-    add_constant : bool
-        Whether to add a constant to both selection and outcome features.
+    estimator : object
+        Must implement ``fit(X, y)`` and ``predict`` (and optionally
+        ``predict_proba``).  E.g. ``xgboost.XGBClassifier``.
+    method : {'twostep', 'mle'}, default 'twostep'
+        Which routine of the original `Heckman` class to call.
+    add_constant : bool, default True
+        Whether to prepend a constant column to both *selection* and *outcome*
+        feature blocks (mirrors `statsmodels.add_constant`).
+    clip : float, default 1e-8
+        Lower bound on Φ(.) in IMR to avoid divide‑by‑zero.
     """
-    def __init__(self, outcome_estimator, use_proba=True, add_constant=True):
-        self.outcome_estimator = outcome_estimator
-        self.use_proba = use_proba
+
+    def __init__(self, estimator, *, method="twostep", add_constant=True, clip=1e-8):
+        self.base_estimator = estimator
+        self.method = method
         self.add_constant = add_constant
-        self.selection_model_ = None
-        self.outcome_model_ = None
+        self.clip = clip
 
-    def _prepare(self, X, add_const):
-        Xp = X.copy()
-        if self.add_constant and add_const:
-            Xp = sm.add_constant(Xp, has_constant='add')
-        return Xp.values
+        # Filled during fit
+        self.heckman_res_ = None  # statsmodels results
+        self.estimator_ = None    # fitted outcome estimator
 
-    def fit(self, X_select, y_select, X_outcome, y_outcome):  # noqa: D417
+
+    def _const(self, X):
+        """Optionally add a constant & return numpy array."""
+        if self.add_constant:
+            return sm.add_constant(X, has_constant="add").values
+        return np.asarray(X)
+
+    def _imr(self, Zidx):
+        """ϕ/Φ with clipping to keep finite."""
+        pdf = norm.pdf(Zidx)
+        cdf = np.clip(norm.cdf(Zidx), self.clip, 1.0)
+        return pdf / cdf
+
+
+    def fit(self, X_select, y_select, X_outcome, y_outcome):
+        """Fit wrapper.
+
+        Parameters
+        ----------
+        X_select : DataFrame/array‑like, shape (n_samples, n_Z)
+            Features used in the *selection* equation (whole population).
+        y_select : array‑like, shape (n_samples,)
+            1 ⇒ originated (un‑censored), 0 ⇒ rejected.
+        X_outcome : DataFrame/array‑like, shape (n_originated, n_X)
+            Outcome‑equation features for *originated* subsample.
+        y_outcome : array‑like, shape (n_originated,)
+            Observed target (e.g. default) for originated loans.
         """
-        Fit the two-step model.
+        # 1️⃣ Build the unified inputs expected by the original Heckman class
+        X_sel_const = self._const(X_select)
+        X_out_const = self._const(X_outcome)
 
-        X_select : DataFrame
-            Features for selection equation (full sample).
-        y_select : array-like
-            1 if observed (originated), 0 otherwise.
-        X_outcome : DataFrame
-            Features for outcome equation (originated only).
-        y_outcome : array-like
-            Observed outcome (default) for originated loans.
-        """
-        # 1. Fit Probit selection
-        Z = self._prepare(X_select, add_const=True)
-        probit = sm.Probit(y_select, Z)
-        self.selection_model_ = probit.fit(disp=False)
-        z_index = self.selection_model_.fittedvalues  # latent index
+        mask_originated = (y_select == 1)
+        if np.sum(mask_originated) != len(y_outcome):
+            raise ValueError("y_outcome length must equal number of 1's in y_select")
 
-        # 2. Compute IMR for all
-        pdf = norm.pdf(z_index)
-        cdf = norm.cdf(z_index)
-        imr = pdf / np.clip(cdf, 1e-8, None)
+        # endog = y_outcome with NaN where censored
+        endog = np.full_like(y_select, np.nan, dtype=float)
+        endog[mask_originated] = y_outcome
 
-        # 3. Fit outcome with IMR as extra feature
-        mask = (y_select == 1)
-        X1 = self._prepare(X_outcome, add_const=False)
-        imr1 = imr[mask]
-        W = np.hstack([X1, imr1[:, None]])
-        self.outcome_model_ = self.outcome_estimator.fit(W, y_outcome)
+        # The original Heckman wants X for *all* rows, but rows w/ NaN outcome
+        # are ignored in step‑2 internally. We duplicate outcome‑feature block
+        # for censored rows just to satisfy the API.
+        X_block = np.zeros((len(y_select), X_out_const.shape[1]))
+        X_block[mask_originated] = X_out_const
+
+        # 2️⃣ Fit the statsmodels Heckman
+        model = Heckman(endog, X_block, X_sel_const, missing="none")
+        self.heckman_res_ = model.fit(method=self.method)
+
+        # 3️⃣ Compute IMR for *all* rows
+        zidx = self.heckman_res_.select_res.fittedvalues
+        imr_all = self._imr(zidx)
+
+        # 4️⃣ Fit user estimator on originated loans + IMR
+        W = np.hstack([X_out_const, imr_all[mask_originated][:, None]])
+        self.estimator_ = self.base_estimator.fit(W, y_outcome)
         return self
 
-    def predict(self, X_select_new, X_outcome_new):  # noqa: D417
+    def predict(self, X_select_new, X_outcome_new, *, proba=False):
+        """Predict with corrected model.
+
+        X_select_new : features for selection equation
+        X_outcome_new : features for outcome equation
+        proba : bool, default False -> call predict_proba if available
         """
-        Predict using the two-stage model.
+        if self.heckman_res_ is None:
+            raise ValueError("Must call fit before predict.")
 
-        X_select_new : DataFrame
-            Features for selection equation.
-        X_outcome_new : DataFrame
-            Features for outcome equation.
+        # Compute IMR from stored Probit coefficients
+        Z_new = self._const(X_select_new)
+        zidx_new = Z_new @ self.heckman_res_.select_res.params
+        imr_new = self._imr(zidx_new)[:, None]
 
-        Returns
-        -------
-        array
-            Predictions (or probabilities) of the outcome.
-        """
-        # Compute new IMR
-        Z_new = self._prepare(X_select_new, add_const=True)
-        zindex_new = Z_new.dot(self.selection_model_.params)
-        pdf_new = norm.pdf(zindex_new)
-        cdf_new = norm.cdf(zindex_new)
-        imr_new = pdf_new / np.clip(cdf_new, 1e-8, None)
+        X_out_const = self._const(X_outcome_new)
+        W_new = np.hstack([X_out_const, imr_new])
 
-        # Combine with outcome features
-        X2 = self._prepare(X_outcome_new, add_const=False)
-        W_new = np.hstack([X2, imr_new[:, None]])
-
-        # Return desired prediction
-        if self.use_proba and hasattr(self.outcome_model_, 'predict_proba'):
-            return self.outcome_model_.predict_proba(W_new)
-        return self.outcome_model_.predict(W_new)
-
-# Example usage:
-# from sklearn.ensemble import GradientBoostingClassifier
-# wrapper = HeckmanTwoStage(GradientBoostingClassifier(), use_proba=True)
-# wrapper.fit(X_sel_full, y_sel_full, X_orig, y_orig)
-# preds = wrapper.predict(X_sel_full, X_new_orig)"}
+        if proba and hasattr(self.estimator_, "predict_proba"):
+            return self.estimator_.predict_proba(W_new)
+        return self.estimator_.predict(W_new)
