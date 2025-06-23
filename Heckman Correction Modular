@@ -53,7 +53,6 @@ class HeckmanWrapper:
         y_outcome : array‑like, shape (n_originated,)
             Observed target (e.g. default) for originated loans.
         """
-        # 1️⃣ Build the unified inputs expected by the original Heckman class
         X_sel_const = self._const(X_select)
         X_out_const = self._const(X_outcome)
 
@@ -71,15 +70,12 @@ class HeckmanWrapper:
         X_block = np.zeros((len(y_select), X_out_const.shape[1]))
         X_block[mask_originated] = X_out_const
 
-        # 2️⃣ Fit the statsmodels Heckman
         model = Heckman(endog, X_block, X_sel_const, missing="none")
         self.heckman_res_ = model.fit(method=self.method)
 
-        # 3️⃣ Compute IMR for *all* rows
         zidx = self.heckman_res_.select_res.fittedvalues
         imr_all = self._imr(zidx)
 
-        # 4️⃣ Fit user estimator on originated loans + IMR
         W = np.hstack([X_out_const, imr_all[mask_originated][:, None]])
         self.estimator_ = self.base_estimator.fit(W, y_outcome)
         return self
